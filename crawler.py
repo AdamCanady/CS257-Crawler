@@ -23,7 +23,7 @@ import Queue
 import sets
 import time
 
-
+# Derived from Jeff's Code
 def get_links(text):
     href_pattern = re.compile(r'<a .*?href="(.*?)"')
     links = []
@@ -31,7 +31,7 @@ def get_links(text):
         links.append(href_value)
     return links
 
-# From Jeff's Code
+# Derived from Jeff's Code
 def get_page(url):
     # Get the text of the requested page.
     try:
@@ -56,9 +56,9 @@ def print_outgoing_links(links_reverse, search_prefix):
             print link
 
 def print_summary(startingURL, links_reverse, crawled_nodes, broken_links):
-    # Process Graph
+    # Process Graph (derived from Stack Overflow post linked above)
     q = Queue.Queue()
-    q.put((startingURL, ))
+    q.put((startingURL,))
     visited = set()
     visited.add(startingURL)
 
@@ -93,20 +93,21 @@ def print_summary(startingURL, links_reverse, crawled_nodes, broken_links):
     for link in crawled_nodes - visited - broken_links:
         print link
 
-
 def main(arguments):
     ## Taking care of arguments ##
     if not arguments.linklimit: linklimit = 1000
     elif "infinity" in arguments.linklimit: linklimit = float('inf')
     else: linklimit = int(arguments.linklimit[0])
+    startingURL = urllib2.urlopen(arguments.startingURL).geturl() # Reconcile initial redirects
+    print "Initial URL Reconciled:", startingURL
 
-    search_prefix = urlparse.urlparse(arguments.startingURL).netloc if not arguments.searchprefix else arguments.searchprefix
+    search_prefix = urlparse.urlparse(startingURL).netloc if not arguments.searchprefix else arguments.searchprefix
 
     ## Defining Data Structures ##
     to_crawl = Queue.Queue()
-    to_crawl.put(arguments.startingURL)
+    to_crawl.put(startingURL)
     queued = set()
-    queued.add(arguments.startingURL)
+    queued.add(startingURL)
 
     # Graph components
     links_forward = {} # links_forward[link_from] = [link_to]
@@ -156,7 +157,7 @@ def main(arguments):
 
 
     if arguments.action and "summary" in arguments.action:
-        print_summary(arguments.startingURL, links_reverse, crawled_nodes, broken_links)
+        print_summary(startingURL, links_reverse, crawled_nodes, broken_links)
 
 if __name__ == '__main__':
     arg_parser = argparse.ArgumentParser(description='Produce a report on the web page specified on the command line.')
