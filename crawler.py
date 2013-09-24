@@ -10,6 +10,13 @@
 
     Usage: python crawler.py [--linklimit int] [--searchprefix string] [--action brokenlinks | outgoing links | summary] url
 
+    Note: an option given as a searchprefix will be tested as being inside a URL string, not just a prefix. This
+    functionality allows the crawler to work on multiple subdomains if just a root domain is given (e.g. carleton.edu).
+    Additionally, all URLs will be processed without a trailing "/" to allow for greater flexibility in intra-site
+    navigation conventions.
+
+    This crawler pauses for 1/10th of a second between requests to avoid imposing denial of service attacks on webservers.
+
     Some code in this project was derived from Jeff Ondich's web-precrawler.py. Additionally, the
     breadth-first-search algorithm was derived from the following Stack Overflow article:
     http://stackoverflow.com/questions/16755546/python-breadth-first-search-capable-of-returning-largest-distance
@@ -89,7 +96,7 @@ def print_summary(startingURL, links_reverse, crawled_nodes, broken_links):
 
     # CantGetHome
     print "CantGetHome:"
-    # print "Visited:", visited
+
     for link in crawled_nodes - visited - broken_links:
         print link
 
@@ -98,8 +105,9 @@ def main(arguments):
     if not arguments.linklimit: linklimit = 1000
     elif "infinity" in arguments.linklimit: linklimit = float('inf')
     else: linklimit = int(arguments.linklimit[0])
+
     startingURL = urllib2.urlopen(arguments.startingURL).geturl() # Reconcile initial redirects
-    print "Initial URL Reconciled:", startingURL
+    if startingURL[-1] == "/": startingURL = startingURL[:-1] # Strip final slash
 
     search_prefix = urlparse.urlparse(startingURL).netloc if not arguments.searchprefix else arguments.searchprefix
 
@@ -127,11 +135,11 @@ def main(arguments):
 
         if cur_response_code == 404:
             broken_links.add(cur_url)
-            # continue
 
         cur_page_links = get_links(cur_page)
 
         for link in cur_page_links:
+            if link[-1] == "/" and len(link) > 1: link = link[:-1] # Strip final slash
             full_url = urlparse.urljoin(cur_url, link) # Deal with relational links
 
             if search_prefix in full_url and full_url not in queued:
