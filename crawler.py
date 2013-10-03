@@ -74,7 +74,7 @@ def print_summary(startingURL, links_reverse, crawled_nodes, broken_links):
     while not q.empty():
         path = q.get()
         last_node = path[-1]
-        for node in links_reverse[last_node]:
+        for node in links_reverse.get(last_node, []):
             if node not in visited:
                 new_path = path + (node,)
                 if len(new_path) > longest_path_len:
