@@ -30,151 +30,155 @@ import Queue
 import sets
 import time
 
-# Derived from Jeff's Code
-def get_links(text):
-    href_pattern = re.compile(r'<a .*?href="(.*?)"')
-    links = []
-    for href_value in re.findall(href_pattern, text):
-        links.append(href_value)
-    return links
+class Crawl():
 
-# Derived from Jeff's Code
-def get_page(url):
-    # Get the text of the requested page.
-    try:
-        response = urllib2.urlopen(url, timeout=5)
-        page_contents = response.read()
-        code = response.code
-        response.close()
-        return page_contents, code
-    except Exception, e:
-        return '', 404
+    def __init__(self, arguments):
+        self.arguments = arguments
+        self.process_arguments(self.arguments.linklimit, self.arguments.startingURL, self.arguments.searchprefix)
 
-def print_broken_links(broken_links, links_reverse):
-    print "Broken Links:"
-    for link in broken_links:
-        for backlink in links_reverse[link]:
-            print backlink + ", " + link
+        self.main()
 
-def print_outgoing_links(links_reverse, search_prefix):
-    print "Outgoing Links:"
-    for link in links_reverse:
-        if search_prefix not in link:
+    def process_arguments(self, link_limit, startingURL, search_prefix):
+        ## Take care of arguments ##
+        if not link_limit: self.link_limit = 1000
+        elif "infinity" in link_limit: self.link_limit = float('inf')
+        else: self.link_limit = int(link_limit[0])
+
+        self.startingURL = urllib2.urlopen(startingURL).geturl() # Reconcile initial redirects
+        self.search_prefix = self.startingURL if not search_prefix else search_prefix
+
+        self.urls_to_crawl = Queue.Queue()
+        self.urls_to_crawl.put(self.startingURL)
+        self.queued_for_crawling = set()
+        self.queued_for_crawling.add(self.startingURL)
+        self.links_reverse = {} # links_reverse[link_to] = [link_from]
+        self.crawled_nodes = set()
+        self.crawled_path = {} # crawled_nodes[url] = (path_to_url)
+        self.broken_links = set() # "url_from, url_to"
+
+    def print_broken_links(self):
+        print "Broken Links:"
+        for link in self.broken_links:
+            for backlink in self.links_reverse[link]:
+                print backlink + ", " + link
+
+    def print_outgoing_links(self):
+        print "Outgoing Links:"
+        for link in self.links_reverse:
+            if self.search_prefix not in link:
+                print link
+
+    def print_summary(self):
+        # Process Graph (derived from Stack Overflow post linked above)
+        q = Queue.Queue()
+        q.put((self.startingURL,))
+        visited = set()
+        visited.add(self.startingURL)
+
+        while not q.empty():
+            path = q.get()
+            last_node = path[-1]
+            for node in self.links_reverse.get(last_node,[]):
+                if node not in visited:
+                    new_path = path + (node,)
+                    q.put(new_path)
+                    visited.add(node)
+
+        # Find longest path
+        longest_path_len = 0
+        longest_path = ()
+        for key in self.crawled_path:
+            path = self.crawled_path[key]
+            if len(path) > longest_path_len:
+                longest_path = path
+                longest_path_len = len(path)
+
+        # FilesFound
+        print "FilesFound:", len(self.crawled_nodes)
+
+        # LongestPathDepth
+        print "LongestPathDepth:", longest_path_len
+
+        # LongestPath
+        print "LongestPath:"
+        for node in longest_path:
+            print node
+
+        # CantGetHome
+        print "CantGetHome:"
+
+        for link in self.crawled_nodes - visited - self.broken_links:
             print link
 
-def print_summary(startingURL, links_reverse, crawled_path, crawled_nodes, broken_links):
-    # Process Graph (derived from Stack Overflow post linked above)
-    q = Queue.Queue()
-    q.put((startingURL,))
-    visited = set()
-    visited.add(startingURL)
+    def do_crawl(self):
+        while not self.urls_to_crawl.empty() and len(self.crawled_nodes) < self.link_limit:
+            cur_url = self.urls_to_crawl.get()
+            cur_page = Page(cur_url)
 
-    while not q.empty():
-        path = q.get()
-        last_node = path[-1]
-        for node in links_reverse.get(last_node,[]):
-            if node not in visited:
-                new_path = path + (node,)
-                q.put(new_path)
-                visited.add(node)
+            self.crawled_nodes.add(cur_url)
 
-    # Find longest path
-    longest_path_len = 0
-    longest_path = ()
-    for key in crawled_path:
-        path = crawled_path[key]
-        if len(path) > longest_path_len:
-            longest_path = path
-            longest_path_len = len(path)
+            if cur_page.response_code == 404:
+                self.broken_links.add(cur_url)
 
-    # FilesFound
-    print "FilesFound:", len(crawled_nodes)
+            for link in cur_page.links:
+                full_url = urlparse.urljoin(cur_url, link) # Deal with relational links
 
-    # LongestPathDepth
-    print "LongestPathDepth:", longest_path_len
+                if self.search_prefix in full_url and full_url not in self.queued_for_crawling:
+                    self.urls_to_crawl.put(full_url)
+                    self.queued_for_crawling.add(full_url)
 
-    # LongestPath
-    print "LongestPath:"
-    for node in longest_path:
-        print node
+                    # Generate Path
+                    if self.crawled_path.get(cur_url):
+                        self.crawled_path[full_url] = self.crawled_path.get(cur_url) + (full_url,)
+                    else:
+                        self.crawled_path[full_url] = (self.startingURL, full_url)
 
-    # CantGetHome
-    print "CantGetHome:"
+                # Links Reverse
+                if full_url in self.links_reverse: self.links_reverse[full_url].append(cur_url)
+                else: self.links_reverse[full_url] = [cur_url]
 
-    for link in crawled_nodes - visited - broken_links:
-        print link
+            time.sleep(0.1)
 
-def process_arguments(link_limit, startingURL, search_prefix):
-    ## Take care of arguments ##
-    if not link_limit: link_limit = 1000
-    elif "infinity" in link_limit: link_limit = float('inf')
-    else: link_limit = int(link_limit[0])
+    def process_crawl(self):
+        # Process the crawl
+        if self.arguments.action and "brokenlinks" in self.arguments.action:
+            self.print_broken_links()
 
-    startingURL = urllib2.urlopen(startingURL).geturl() # Reconcile initial redirects
+        if self.arguments.action and "outgoinglinks" in self.arguments.action:
+            self.print_outgoing_links()
 
-    search_prefix = startingURL if not search_prefix else search_prefix
+        if self.arguments.action and "summary" in self.arguments.action:
+            self.print_summary()
 
-    return link_limit, startingURL, search_prefix
+    def main(self):
+        self.do_crawl()
+        self.process_crawl()
 
-def do_crawl(link_limit, startingURL, search_prefix):
-    urls_to_crawl, queued_for_crawling, links_reverse, crawled_nodes, crawled_path, broken_links = make_data_structures(startingURL)
+class Page():
+    def __init__(self, url):
+        self.url = url
+        self.get_page()
+        self.get_links()
 
-    while not urls_to_crawl.empty() and len(crawled_nodes) < link_limit:
-        cur_url = urls_to_crawl.get()
-        cur_page, cur_response_code = get_page(cur_url)
-        crawled_nodes.add(cur_url)
+    # Derived from Jeff's Code
+    def get_links(self):
+        href_pattern = re.compile(r'<a .*?href="(.*?)"')
+        links = []
+        for href_value in re.findall(href_pattern, self.content):
+            links.append(href_value)
+        self.links = links
 
-        if cur_response_code == 404:
-            broken_links.add(cur_url)
-
-        cur_page_links = get_links(cur_page)
-
-        for link in cur_page_links:
-            full_url = urlparse.urljoin(cur_url, link) # Deal with relational links
-
-            if search_prefix in full_url and full_url not in queued_for_crawling:
-                urls_to_crawl.put(full_url)
-                queued_for_crawling.add(full_url)
-
-                # Generate Path
-                crawled_path[full_url] = crawled_path.get(cur_url) + (full_url,) if crawled_path.get(cur_url) else (startingURL, full_url)
-
-            # Links Reverse
-            if full_url in links_reverse: links_reverse[full_url].append(cur_url)
-            else: links_reverse[full_url] = [cur_url]
-
-        time.sleep(0.1)
-
-    return urls_to_crawl, queued_for_crawling, links_reverse, crawled_nodes, crawled_path, broken_links
-
-def make_data_structures(startingURL):
-    ## Defining Data Structures ##
-    urls_to_crawl = Queue.Queue()
-    urls_to_crawl.put(startingURL)
-    queued_for_crawling = set()
-    queued_for_crawling.add(startingURL)
-    links_reverse = {} # links_reverse[link_to] = [link_from]
-    crawled_nodes = set()
-    crawled_path = {} # crawled_nodes[url] = (path_to_url)
-    broken_links = set() # "url_from, url_to"
-
-    return urls_to_crawl, queued_for_crawling, links_reverse, crawled_nodes, crawled_path, broken_links
-
-def main(arguments):
-
-    link_limit, startingURL, search_prefix = process_arguments(arguments.linklimit, arguments.startingURL, arguments.searchprefix)
-
-    urls_to_crawl, queued_for_crawling, links_reverse, crawled_nodes, crawled_path, broken_links = do_crawl(link_limit, startingURL, search_prefix)
-
-    # Process the crawl
-    if arguments.action and "brokenlinks" in arguments.action:
-        print_broken_links(broken_links, links_reverse)
-
-    if arguments.action and "outgoinglinks" in arguments.action:
-        print_outgoing_links(links_reverse, search_prefix)
-
-    if arguments.action and "summary" in arguments.action:
-        print_summary(startingURL, links_reverse, crawled_path, crawled_nodes, broken_links)
+    # Derived from Jeff's Code
+    def get_page(self):
+        # Get the text of the requested page.
+        try:
+            response = urllib2.urlopen(self.url, timeout=5)
+            self.content = response.read()
+            self.response_code = response.code
+            response.close()
+        except Exception, e:
+            self.content = ''
+            self.response_code = 404
 
 if __name__ == '__main__':
     arg_parser = argparse.ArgumentParser(description='Produce a report on the web page specified on the command line.')
@@ -184,4 +188,4 @@ if __name__ == '__main__':
     arg_parser.add_argument('--action', action='append')
     arguments = arg_parser.parse_args()
 
-    main(arguments)
+    Crawl(arguments)
