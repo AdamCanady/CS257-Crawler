@@ -3,7 +3,7 @@
     crawler.py
     Adam Canady
     Jeff Ondich, CS257
-    September 23, 2013
+    October 4, 2013
 
     This project is a single-threaded web crawler that returns a number of basic useful functionalities
     directed towards webmasters or website content managers.
