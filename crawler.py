@@ -116,24 +116,9 @@ def process_arguments(link_limit, startingURL, search_prefix):
 
     return link_limit, startingURL, search_prefix
 
-def main(arguments):
+def do_crawl(link_limit, startingURL, search_prefix):
+    urls_to_crawl, queued_for_crawling, links_reverse, crawled_nodes, crawled_path, broken_links = make_data_structures(startingURL)
 
-    link_limit, startingURL, search_prefix = process_arguments(arguments.linklimit, arguments.startingURL, arguments.searchprefix)
-
-    ## Defining Data Structures ##
-    urls_to_crawl = Queue.Queue()
-    urls_to_crawl.put(startingURL)
-    queued_for_crawling = set()
-    queued_for_crawling.add(startingURL)
-
-    # Graph components
-    links_reverse = {} # links_reverse[link_to] = [link_from]
-    crawled_nodes = set()
-    crawled_path = {} # crawled_nodes[url] = (path_to_url)
-
-    broken_links = set() # "url_from, url_to"
-
-    # Main loop
     while not urls_to_crawl.empty() and len(crawled_nodes) < link_limit:
         cur_url = urls_to_crawl.get()
         cur_page, cur_response_code = get_page(cur_url)
@@ -159,6 +144,27 @@ def main(arguments):
             else: links_reverse[full_url] = [cur_url]
 
         time.sleep(0.1)
+
+    return urls_to_crawl, queued_for_crawling, links_reverse, crawled_nodes, crawled_path, broken_links
+
+def make_data_structures(startingURL):
+    ## Defining Data Structures ##
+    urls_to_crawl = Queue.Queue()
+    urls_to_crawl.put(startingURL)
+    queued_for_crawling = set()
+    queued_for_crawling.add(startingURL)
+    links_reverse = {} # links_reverse[link_to] = [link_from]
+    crawled_nodes = set()
+    crawled_path = {} # crawled_nodes[url] = (path_to_url)
+    broken_links = set() # "url_from, url_to"
+
+    return urls_to_crawl, queued_for_crawling, links_reverse, crawled_nodes, crawled_path, broken_links
+
+def main(arguments):
+
+    link_limit, startingURL, search_prefix = process_arguments(arguments.linklimit, arguments.startingURL, arguments.searchprefix)
+
+    urls_to_crawl, queued_for_crawling, links_reverse, crawled_nodes, crawled_path, broken_links = do_crawl(link_limit, startingURL, search_prefix)
 
     # Process the crawl
     if arguments.action and "brokenlinks" in arguments.action:
