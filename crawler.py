@@ -62,26 +62,30 @@ def print_outgoing_links(links_reverse, search_prefix):
         if search_prefix not in link:
             print link
 
-def print_summary(startingURL, links_reverse, crawled_nodes, broken_links):
+def print_summary(startingURL, links_reverse, crawled_path, crawled_nodes, broken_links):
     # Process Graph (derived from Stack Overflow post linked above)
     q = Queue.Queue()
     q.put((startingURL,))
     visited = set()
     visited.add(startingURL)
 
-    longest_path_len = 0
-    longest_path = (startingURL,)
     while not q.empty():
         path = q.get()
         last_node = path[-1]
-        for node in links_reverse[last_node]:
+        for node in links_reverse.get(last_node,[]):
             if node not in visited:
                 new_path = path + (node,)
-                if len(new_path) > longest_path_len:
-                    longest_path = new_path
-                    longest_path_len = len(longest_path)
                 q.put(new_path)
                 visited.add(node)
+
+    # Find longest path
+    longest_path_len = 0
+    longest_path = ()
+    for key in crawled_path:
+        path = crawled_path[key]
+        if len(path) > longest_path_len:
+            longest_path = path
+            longest_path_len = len(path)
 
     # FilesFound
     print "FilesFound:", len(crawled_nodes)
@@ -100,36 +104,38 @@ def print_summary(startingURL, links_reverse, crawled_nodes, broken_links):
     for link in crawled_nodes - visited - broken_links:
         print link
 
+def process_arguments(link_limit, startingURL, search_prefix):
+    ## Take care of arguments ##
+    if not link_limit: link_limit = 1000
+    elif "infinity" in link_limit: link_limit = float('inf')
+    else: link_limit = int(link_limit[0])
+
+    startingURL = urllib2.urlopen(startingURL).geturl() # Reconcile initial redirects
+
+    search_prefix = startingURL if not search_prefix else search_prefix
+
+    return link_limit, startingURL, search_prefix
+
 def main(arguments):
-    ## Taking care of arguments ##
-    if not arguments.linklimit: linklimit = 1000
-    elif "infinity" in arguments.linklimit: linklimit = float('inf')
-    else: linklimit = int(arguments.linklimit[0])
 
-    startingURL = urllib2.urlopen(arguments.startingURL).geturl() # Reconcile initial redirects
-    if startingURL[-1] == "/": startingURL = startingURL[:-1] # Strip final slash
-
-    search_prefix = urlparse.urlparse(startingURL).netloc if not arguments.searchprefix else arguments.searchprefix
+    link_limit, startingURL, search_prefix = process_arguments(arguments.linklimit, arguments.startingURL, arguments.searchprefix)
 
     ## Defining Data Structures ##
-    to_crawl = Queue.Queue()
-    to_crawl.put(startingURL)
-    queued = set()
-    queued.add(startingURL)
+    urls_to_crawl = Queue.Queue()
+    urls_to_crawl.put(startingURL)
+    queued_for_crawling = set()
+    queued_for_crawling.add(startingURL)
 
     # Graph components
-    links_forward = {} # links_forward[link_from] = [link_to]
     links_reverse = {} # links_reverse[link_to] = [link_from]
     crawled_nodes = set()
+    crawled_path = {} # crawled_nodes[url] = (path_to_url)
 
     broken_links = set() # "url_from, url_to"
 
-    # Make connected_to_home set
-    connected_to_home = {}
-
     # Main loop
-    while not to_crawl.empty() and len(crawled_nodes) < linklimit:
-        cur_url = to_crawl.get()
+    while not urls_to_crawl.empty() and len(crawled_nodes) < link_limit:
+        cur_url = urls_to_crawl.get()
         cur_page, cur_response_code = get_page(cur_url)
         crawled_nodes.add(cur_url)
 
@@ -139,16 +145,14 @@ def main(arguments):
         cur_page_links = get_links(cur_page)
 
         for link in cur_page_links:
-            if link[-1] == "/" and len(link) > 1: link = link[:-1] # Strip final slash
             full_url = urlparse.urljoin(cur_url, link) # Deal with relational links
 
-            if search_prefix in full_url and full_url not in queued:
-                to_crawl.put(full_url)
-                queued.add(full_url)
+            if search_prefix in full_url and full_url not in queued_for_crawling:
+                urls_to_crawl.put(full_url)
+                queued_for_crawling.add(full_url)
 
-            # Links Forward
-            if cur_url in links_forward: links_forward[cur_url].append(full_url)
-            else: links_forward[cur_url] = [full_url]
+                # Generate Path
+                crawled_path[full_url] = crawled_path.get(cur_url) + (full_url,) if crawled_path.get(cur_url) else (startingURL, full_url)
 
             # Links Reverse
             if full_url in links_reverse: links_reverse[full_url].append(cur_url)
@@ -163,9 +167,8 @@ def main(arguments):
     if arguments.action and "outgoinglinks" in arguments.action:
         print_outgoing_links(links_reverse, search_prefix)
 
-
     if arguments.action and "summary" in arguments.action:
-        print_summary(startingURL, links_reverse, crawled_nodes, broken_links)
+        print_summary(startingURL, links_reverse, crawled_path, crawled_nodes, broken_links)
 
 if __name__ == '__main__':
     arg_parser = argparse.ArgumentParser(description='Produce a report on the web page specified on the command line.')
